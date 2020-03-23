@@ -1,0 +1,138 @@
+buildscript {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        gradlePluginPortal()
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'io.johnsonlee.buildprops:buildprops-gradle-plugin:1.0.0'
+    }
+}
+
+plugins {
+    id 'java-library'
+    id 'maven'
+    id 'signing'
+    id 'io.codearte.nexus-staging' version '0.21.2'
+    id 'de.marcphilipp.nexus-publish' version '0.4.0'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    jcenter()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.12'
+}
+
+group = 'io.johnsonlee.lambda'
+version = '1.0.0'
+
+apply plugin: 'io.johnsonlee.buildprops'
+
+javadoc {
+    failOnError = false
+}
+
+task packageJavadoc(type: Jar) {
+    classifier = 'javadoc'
+    from javadoc
+}
+
+task packageSources(type: Jar) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives packageJavadoc, packageSources
+}
+
+test {
+    testLogging {
+        events "passed", "skipped", "failed", "standardOut", "standardError"
+    }
+}
+
+nexusPublishing {
+    repositories {
+        sonatype {
+            username = OSSRH_USERNAME
+            password = OSSRH_PASSWORD
+        }
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+            version = project.version
+
+            from components.java
+
+            artifact project.packageSources {
+                classifier "sources"
+            }
+
+            artifact project.packageJavadoc {
+                classifier "javadoc"
+            }
+
+            pom {
+                name = project.name
+                url = 'https://github.com/johnsonlee/lambda-support'
+                description = project.description ?: project.name
+
+                scm {
+                    connection = 'scm:git:git://github.com/johnsonlee/lambda-support.git'
+                    developerConnection = 'scm:git:git@github.com:johnsonlee/lambda-support.git'
+                    url = 'https://github.com/johnsonlee/lambda-support'
+                }
+
+                licenses {
+                    license {
+                        name = 'Apache License'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+            }
+            pom.withXml { xml ->
+                (['git', 'log', '--format=%aN %aE'].execute() | ['sort', '-u'].execute()).with {
+                    waitForOrKill(5000)
+                    if (0 == exitValue()) {
+                        def developers = xml.asNode().appendNode('developers')
+                        text.eachLine { line ->
+                            def sp = line.lastIndexOf(' ')
+                            if (sp > 0) {
+                                def id = line.substring(0, sp).trim()
+                                def email = line.substring(sp + 1).trim()
+                                developers.appendNode('developer').with {
+                                    appendNode('id', id)
+                                    appendNode('email', email)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+signing {
+    sign publishing.publications.mavenJava
+}
+
+nexusStaging {
+    packageGroup = 'io.johnsonlee'
+    username = OSSRH_USERNAME
+    password = OSSRH_PASSWORD
+    numberOfRetries = 50
+    delayBetweenRetriesInMillis = 3000
+}
